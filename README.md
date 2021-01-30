@@ -1,20 +1,20 @@
 **아래의 모든 내용은 [DGIST ARTIV Tech Blog](https://dgist-artiv.github.io/vision/2021/01/27/Selfmade-DTG(Digital-tacho-graph).html)에서 확인할 수 있다.**
 
 ---
-date: 2021-01-27
-layout: post
-title: Selfmade DTG
-subtitle: rosbag을 이용하여 차량의 주행정보를 분석하기!
-description: 자율주행 임시운행 허가를 위한 DTG 만들기
-image: https://user-images.githubusercontent.com/59161083/105984936-2b46d280-60de-11eb-9411-8a07a1ea9b79.png
-category: vision
-tags:
-  - automation
-  - rosbag analysis
-  - rosbag analysis with Window
-  - Data Analysis
-author: gu
----
+date: 2021-01-27   
+layout: post   
+title: Selfmade DTG   
+subtitle: rosbag을 이용하여 차량의 주행정보를 분석하기!   
+description: 자율주행 임시운행 허가를 위한 DTG 만들기   
+image: https://user-images.githubusercontent.com/59161083/105984936-2b46d280-60de-11eb-9411-8a07a1ea9b79.png   
+category: vision   
+tags:   
+  - automation   
+  - rosbag analysis   
+  - rosbag analysis with Window   
+  - Data Analysis   
+author: gu   
+---   
 Author : 이  구 <br/>
 Date: 2021.01.27
 
