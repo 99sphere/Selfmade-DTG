@@ -1,8 +1,10 @@
 # SelfmadeTOD.py
 # Gu Lee
 # 2021.01.27
-# v0.0.3
+# v0.0.5
 # 각 topic의 max, min 값을 붉은색 dashed line으로 표시.
+# Override feedback, Gear position plot
+# Switch: Auto Standby Switch --> Override Feedback
 
 import bagpy
 from bagpy import bagreader
@@ -14,11 +16,9 @@ import csv
 from datetime import datetime
 import time
 import math
-from tqdm.notebook import tqdm
 import os
 import os.path
 import glob
-from matplotlib.backends.backend_pdf import PdfPages
 
 class Data:
     def __init__(self):
@@ -47,10 +47,14 @@ class Data:
         return result
 
 class BagParser:
-    def __init__(self,bagfile_name, selected_info = ["Average Speed", "Steering Angle", "Auto Standby Switch", "BPS Feedback", "APS Feedback"],
-                 y_axis_names = ["Average Speed(km/h)", "Steering Angle(degree)", "Auto Standby Switch", "BPS Feedback", "APS Feedback"],
-                 y_lims = [[0, 120], [-600,600], [0,2], [0,300], [0,300]],
-                 y_max = [[None],[-540, 540], [None], [255], [255]],
+    def __init__(self,bagfile_name, selected_info = ["Average Speed", "Steering Angle", "Auto Standby Switch",
+                                                     "BPS Feedback", "APS Feedback", "Override Feedback",
+                                                     "Gear Position"],
+                 y_axis_names = ["Average Speed(km/h)", "Steering Angle(degree)", 
+                                 "Auto Standby Switch", "BPS Feedback", "APS Feedback", 
+                                 "Override Feedback", "Gear Position"],
+                 y_lims = [[0, 120], [-600,600], [0,2], [0,300], [0,300], [0,7], [0, 10]],
+                 y_max = [[None],[-540, 540], [None], [255], [255], [None], [None]],
                  save = True):
         self.save = save
         self.bagfile_name = bagfile_name
@@ -80,21 +84,32 @@ class BagParser:
         t_ms = t_ms[-1] 
         return str(y)+"-"+str(m)+"-"+str(d)+" "+str(t_h)+":"+str(t_m)+":"+str(t_s)+":"+str(t_ms)
     
-    def get_data(self):
+    def get_data(self, GPS = False, SCC = False):
         self.data = []
         try:
             data = self.bagreader.message_by_topic('/Ioniq_info')
             print("File saved: {}".format(data))  
         except:
             pass
+
+        if GPS:
+            try:
+                data = self.bagreader.message_by_topic('/utm_fix')
+                print("File saved: {}".format(data))  
+            except:
+                print("There are no GPS info")
+                pass
         
-        try:
-            data = self.bagreader.message_by_topic('/utm_fix')
-            print("File saved: {}".format(data))  
-        except:
-            pass
+        if SCC:
+            try:
+                data = self.bagreader.message_by_topic('/scc/closist_distance')
+                print("File saved: {}".format(data))  
+            except:
+                print("There are no SCC info")
+                pass
         
-        data = pd.read_csv("C:\\Users\\VILSLAB\\Desktop\\rosbag\\"+bagfile_name+"\\Ioniq_info.csv")
+        data = pd.read_csv("./"+bagfile_name+"/Ioniq_info.csv")
+        
         data.rename(columns={'data_0':'APS ACT Feedback','data_1':'Brake ACT Feedback', 'data_2':'Gear Position', 
                              'data_3':'Steering Angle', 'data_4':'ESTOP Switch', 'data_5':'Auto Standby Switch', 
                              'data_6':'APM Switch', 'data_7':'ASM Switch', 'data_8':'AGM Switch', 'data_9':'Override Feedback',
@@ -103,13 +118,28 @@ class BagParser:
                              'data_19':'Average Speed','data_20':'Wheel FL', 'data_21':'WheelFR', 'data_22':'WheelRL',
                              'data_23':'WheelRR'}, inplace=True)
         
-        utm = pd.read_csv("C:\\Users\\VILSLAB\\Desktop\\rosbag\\"+bagfile_name+"\\utm_fix.csv")
-        utm.rename(columns={'pose.position.x':'utm_x', 'pose.position.y':'utm_y'}, inplace=True)
+        if GPS:
+            utm = pd.read_csv("/home/artiv/SMDTG_SCC" + bagfile_name+ "/utm_fix.csv")
+            utm.rename(columns={'pose.position.x':'utm_x', 'pose.position.y':'utm_y'}, inplace=True)
         
-        self.utm_x = utm['utm_x']
-        self.utm_y = utm['utm_y']
-        
+            self.utm_x = utm['utm_x']
+            self.utm_y = utm['utm_y']
+
+        if SCC:
+            scc = pd.read_csv("./" + bagfile_name+ "/scc-closist_distance.csv")
+            scc.rename(columns={'data_1':'distance'}, inplace=True)
+            self.scc_time = scc['Time']
+            self.scc_distance = scc['distance']
+            self.scc_relTime = []
+            for i in range(len(self.scc_time)):
+                temp = self.scc_time[i] - self.scc_time[0]
+                temp = round(temp, 7)
+                self.scc_relTime.append(temp)
+
+            
         self.all_data = data
+        self.override_feedback = data['Override Feedback']
+        
         self.rosTime = list(data['Time'])
         self.relativeTime = []
 
@@ -117,23 +147,25 @@ class BagParser:
             rel_time = i - self.start_time
             rel_time = round(rel_time, 7)
             self.relativeTime.append(rel_time)
-
-        t_list = self.relativeTime
-        t_set = set(t_list)
-        
-        if len(t_list) == len(t_set):
-            print("Good!!!")
             
-        else:
-            print("Not Good!!!")
-            
-        for i in tqdm(range(len(self.selected_info))):
+        for i in range(len(self.selected_info)):
             self.data.append(data[self.selected_info[i]])
         
         print("Preprocessing is Successfully Done!!!!!")
     
+    def override_feedback_to_switch_data(self):
+        result = []
+        for i in range(len(self.override_feedback)):
+            if self.override_feedback[i] == 1:
+                result.append(1)
+            else:
+                result.append(0)
+        return result
+    
     def switch_idx_parser(self):
-        self.switch_data = self.data[2]
+        # get change_poind_idx list
+        # self.switch_data = self.data[2]
+        self.switch_data = self.override_feedback_to_switch_data()
         for i in range(len(self.switch_data)-1):
             current = self.switch_data[i]
             next = self.switch_data[i+1]
@@ -237,16 +269,15 @@ class BagParser:
                 f.write("\nDriving Distance: "+ str(round(distance, 2))+"(m)")
                 f.write("\n----------------------------------------\n")
                 
-    def visualize(self):
-        fig = plt.figure()
-        fig.tight_layout(pad = 100.0)
+    def visualize(self, GPS = False, SCC=False):
+        fig = plt.figure(figsize=(10,20))
         plt.rcParams['axes.grid'] = True 
-        plt.rcParams["figure.figsize"] = (10,10) 
+        #plt.rcParams["figure.figsize"] = (300,3000) 
         print("total number  of graph: ", len(self.selected_info))
         for i in range(len(self.selected_info)):
             x = self.relativeTime 
             y = self.data[i]
-            ax = fig.add_subplot(len(self.selected_info), 1, i+1)
+            ax = fig.add_subplot(len(self.selected_info)+1, 1, i+1)
             ax.set_xlabel("time(s)")
             ax.set_title(self.y_axis_names[i])
             ax.set_ylim(self.y_lims[i])
@@ -260,37 +291,93 @@ class BagParser:
             for i in range(len(self.change_point_idx)-1):
                 start_idx = self.change_point_idx[i]
                 end_idx = self.change_point_idx[i+1]
-                if i%2 == 0:
+                if int(self.switch_data[start_idx]) == 1:
+                    color = 'm'
+                else:
+                    color = 'c'
+                plt.axvspan(self.relativeTime[start_idx], self.relativeTime[end_idx], facecolor = color, alpha=0.3)
+            
+            ax.plot(x,y)
+        
+        if SCC:   
+            x = self.scc_relTime
+            y = self.scc_distance
+            
+            ax = fig.add_subplot(len(self.selected_info)+1, 1, len(self.selected_info)+1)
+            ax.set_xlabel("time(s)")
+            ax.set_title("closest distance")
+            ax.set_ylim([0, 100])
+            
+            for i in range(len(self.change_point_idx)-1):
+                start_idx = self.change_point_idx[i]
+                end_idx = self.change_point_idx[i+1]
+                if int(self.data[2][start_idx]) == 0:
                     color = 'c'
                 else:
                     color = 'm'
                 plt.axvspan(self.relativeTime[start_idx], self.relativeTime[end_idx], facecolor = color, alpha=0.3)
-            ax.plot(x,y)
 
-        #plt.suptitle('Ioniq Info Analysis from '+self.bagfile_name, fontsize=20, y=0.92)
-        plt.suptitle('Ioniq Info Analysis from '+self.bagfile_name, fontsize=20)
+        ax.plot(x,y)
         
+        #plt.suptitle('Ioniq Info Analysis from '+self.bagfile_name, fontsize=20, y=0.92)
+        plt.suptitle('Ioniq Info Analysis from '+self.bagfile_name, fontsize=10)
+        #plt.subplots(constrained_layout = True)
+        
+        plt.subplots_adjust(left=None, bottom=None, right=None, top=None, wspace=None, hspace=0.5)
         if self.save:
-            plt.savefig(self.bagfile_name+'.png')
+            plt.savefig(self.bagfile_name+'.png',dpi=800)
+        #plt.autoscale()
         plt.show()
         plt.close
-        x = self.utm_x
-        y = self.utm_y
-        plt.scatter(x, y)
-        plt.title('Ioniq Info Analysis from '+self.bagfile_name, fontsize=20, y=1.0)
-        if self.save:
-            plt.savefig(self.bagfile_name+'_gps.png')
-        plt.show()
-        plt.close()
+        
+        if GPS:
+            x = self.utm_x
+            y = self.utm_y
+            plt.scatter(x, y)
+            plt.title('Ioniq Info Analysis from '+self.bagfile_name, fontsize=10, y=1.0)
+            if self.save:
+                plt.savefig(self.bagfile_name+'_gps.png',dpi=800)
+            plt.show()
+            plt.close()
 
 if __name__=="__main__":
+    # find all bagfile in root dir(recursively)
+    auto = 0
+    manual = 0    
+    dirname = os.getcwd()
+    SCC_files = []
+    for dirpath, subdirs, files in os.walk(dirname):
+        for x in files:
+            if x.endswith(".bag"):
+                print(os.path.join(dirpath, x))
+                filename = os.path.join(dirpath, x)[:-4]
+                try:
+                    IoniqInfo = BagParser(filename)
+                    IoniqInfo.get_data()
+                    IoniqInfo.calc_full_info()
+                    IoniqInfo.save_full_info()
+                    IoniqInfo.visualize() 
+                    print("total: ", IoniqInfo.resultData.total_auto_driving_distance, "m")
+                    print("manaul: ", IoniqInfo.resultData.total_manual_driving_distance, "m")
+                    auto += IoniqInfo.resultData.total_auto_driving_distance
+                    manual += IoniqInfo.resultData.total_manual_driving_distance
+                except:
+                    print(filename)
+                    SCC_files.append(filename)
+                    
+    with open("total_info.txt", "w") as f:
+        f.write("auto: ", auto, "m")
+        f.write("manaul: ", manual, "m")
+        f.write("total: ", auto+manual, "m")
+        f.write(SCC_files)
+    
     """
     # for all bag file in dir
     myPath = os.getcwd()
     myExt = '*.bag'
     rosbag = glob.glob(os.path.join(myExt))
     print("rosbag", rosbag)
-    for bagfile in tqdm(rosbag):
+    for bagfile in rosbag:
         bagfile_name = bagfile[:-4]        
         #bagfile_name = '2021-01-22-17-15-33_max braking'
         IoniqInfo = BagParser(bagfile_name)
@@ -298,12 +385,19 @@ if __name__=="__main__":
         IoniqInfo.get_data()
         IoniqInfo.calc_full_info()
         IoniqInfo.save_full_info()
-        IoniqInfo.visualize()
+        IoniqInfo.visualize() 
     """
-    bagfile_name = '2021-01-22-17-15-33_max braking'
+    """   
+    # for one bag file
+    bagfile_name = '2021-02-17-18-20-57'
     IoniqInfo = BagParser(bagfile_name)
     #IoniqInfo.summary()
     IoniqInfo.get_data()
     IoniqInfo.calc_full_info()
     IoniqInfo.save_full_info()
-    IoniqInfo.visualize()
+    IoniqInfo.visualize()   
+    """
+
+
+
+
